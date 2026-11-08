@@ -11,13 +11,15 @@ logger = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional 
-
+from models import Task, Category
 from db import DatabaseManager
-from models import Task
 
 app = FastAPI(title='Task Manager API')
 
 db = DatabaseManager()
+
+class CategoryCreate(BaseModel):
+    name: str
 
 class TaskCreate(BaseModel):
     title: str
@@ -39,6 +41,20 @@ def get_all_tasks():
         }
         for t in tasks
     ]
+
+@app.get('/tasks/{task_id}')
+def get_task(task_id: int):
+    task = db.get_task_by_id(task_id)
+    if task is None:
+        logger.warning('Задача по ID=%s не найдена', task_id)
+        raise HTTPException(status_code=404, detail='Задача не найдена')
+    return {
+        'id': task.id,
+        'title': task.title,
+        'description': task.description,
+        'status': task.status,
+        'deadline': task.deadline
+    }
 
 @app.post('/tasks')
 def create_task(task_data: TaskCreate):
@@ -123,3 +139,35 @@ def delete_task(task_id: int):
     logger.info('Задача ID=%s удалена', task_id)
 
     return {'message': f'Задача {task_id} удалена'}
+
+@app.get('/categories')
+def get_categories():
+    logger.info('GET /categories: запрос списка категорий')
+
+    cats = db.get_categories()
+
+    return [
+        {
+            'id': c.id,
+            'name': c.name
+        }
+        for c in cats
+    ]
+@app.post('/categories')
+def create_categories(category_data: CategoryCreate):
+    logger.info('POST /categories: name=%s', category_data.name)
+
+    try:
+        new_cat = Category(name=category_data.name)
+        db.add_category(new_cat)
+        logger.info('Категория успешно создана ID=%s', new_cat.id)
+        return {
+            'message': 'Категория успешно создана',
+            'id': new_cat.id
+        }
+    except ValueError as e:
+        logger.warning('Ошибка валидации категории: %s', e)
+        raise HTTPException(
+            status_code=400,
+            detail='Категория с таким названием уже существует'
+        )
